@@ -1,0 +1,11 @@
+import os
+import pkg_resources
+import cythrust
+
+env = Environment()
+
+env.Append(CPPPATH=os.environ['CPATH'])
+env.Append(CPPPATH=[pkg_resources.resource_filename('cythrust', 'src')])
+env.Append(CPPDEFINES={'THRUST_DEVICE_SYSTEM': 'THRUST_DEVICE_SYSTEM_CPP'})
+
+env.Program('test.cpp')

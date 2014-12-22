@@ -65,10 +65,10 @@ def extract(node):
 
 
 class DataFlowGraph(object):
-    def __init__(self, operation):
-        self.tree = nested_structures.apply_depth_first([extract(operation)],
-                                                        lambda node, *args:
-                                                        node, as_dict=True)
+    def __init__(self, operation_graph):
+        self.operation_graph = operation_graph
+        self.tree = nested_structures.apply_depth_first(
+            [extract(operation_graph)], lambda node, *args: node, as_dict=True)
 
     def collect(self, func=None):
         if func is None:
