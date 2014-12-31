@@ -30,11 +30,13 @@ namespace uuid00 {
       typedef theano_helpers::Transform2<Op1, iterator0, B> transform1;
       typedef typename transform1::iterator iterator1;
 
-      iterator0 node0 = transform0(thrust::constant_iterator<result_type0>(scalar), a, Op0()).begin();
-      iterator1 node1 = transform1(node0, b, Op1()).begin();
+      iterator0 node0 = transform0()(thrust::constant_iterator<result_type0>(scalar), a, Op0());
+      iterator1 node1 = transform1()(node0, b, Op1());
 
       thrust::copy_n(node1, N, c);
     }
+
+    void other(int32_t scalar, typename thrust::device_vector<int32_t>::iterator a, typename thrust::device_vector<float32_t>::iterator b) {}
   };
 
 }  // end namespace

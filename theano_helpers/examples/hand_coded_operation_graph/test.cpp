@@ -35,6 +35,7 @@ int main(int argc, char const* argv[]) {
   thrust::fill(B.begin(), B.end(), b);
 
   uuid00::Run()(scalar, A.begin(), N, B.begin(), C.begin());
+  uuid00::Run().other(scalar, A.begin(), B.begin());
 
   for (int i = 0; i < N; i++) {
     std::cout << std::setw(4) << C[i];
