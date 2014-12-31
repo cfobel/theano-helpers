@@ -12,4 +12,5 @@ setup(name='theano-helpers',
       author_email='christian@fobel.net',
       url='http://github.com/cfobel/theano-helpers.git',
       license='GPL',
-      packages=['theano_helpers'])
+      packages=['theano_helpers'],
+      install_requires=['theano', 'nested_structures', 'pandas', 'jinja2'])
