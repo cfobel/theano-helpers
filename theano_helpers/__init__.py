@@ -8,8 +8,8 @@ import theano.tensor as T
 import nested_structures
 import pandas as pd
 import jinja2
-from template import (OPERATOR_TEMPLATE, FUNCTION_HEADER_TEMPLATE,
-                      CYTHON_HEADER_TEMPLATE)
+from .template import (OPERATOR_TEMPLATE, FUNCTION_HEADER_TEMPLATE,
+                       CYTHON_HEADER_TEMPLATE)
 
 
 CTYPE_BY_THEANO_TYPE = OrderedDict([('uint8', 'uint8_t'),
