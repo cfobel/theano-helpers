@@ -58,17 +58,11 @@ extract_node = lambda t: (t, arguments(t)) if t.owner else t
 
 # TODO:
 #
-#  - Apply `extract_op` recursively to construct nested operation/argument
-#    tree.
-#   * Perhaps we can get this in a form that will work with the
-#     `nested_structures` Python package.
-#  - Generate code for `thrust::transform_iterator` to implement element-wise
-#    operator, using names of leaf nodes as `DeviceVectorView` variable names.
-#  - Does Theano provide any notation for indirect vector element access,
-#    equivalent to `permutation_iterator`?
-#   * Yes! See [`TensorVariable.take`][1].
+#  - Implement support for indirect vector element access
+#   * See [`TensorVariable.take`][1] and [`thrust::permutation_iterator`][2].
 #
 # [1]: http://deeplearning.net/software/theano/library/tensor/basic.html#tensor._tensor_py_operators.take
+# [2]: https://thrust.github.io/doc/classthrust_1_1permutation__iterator.html
 def extract(node):
     try:
         #op, args = extract_op(node)
@@ -141,39 +135,136 @@ class TypeNames(object):
         return node in self.typenames
 
     def handle_scalar(self, node):
-        op, args = extract_op(node)
+        op, (arg, ) = extract_op(node)
         self.typedefs[node] = ('thrust::constant_iterator<' +
-                               self.typenames[args[0]] + ' >')
+                               self.typenames[arg] + ' >')
         name = self.names_by_node[node]
-        self.values[node] = '%s(%s)' % (name, args[0])
+        if hasattr(arg, 'value'):
+            value = arg.value
+        else:
+            value = arg.name
+        self.values[node] = '%s(%s)' % (name, value)
+
+    def handle_unary(self, node):
+        THRUST_OP_BY_THEANO = OrderedDict([
+            (theano.scalar.basic.Abs, 'cythrust::absolute'),
+            #(theano.scalar.basic.Angle, 'cythrust::'),
+            (theano.scalar.basic.ArcCos, 'cythrust::acos_'),
+            #(theano.scalar.basic.ArcCosh, 'cythrust::acos_'),
+            (theano.scalar.basic.ArcSin, 'cythrust::asin_'),
+            #(theano.scalar.basic.ArcSinh, 'cythrust::'),
+            (theano.scalar.basic.ArcTan, 'cythrust::atan_'),
+            (theano.scalar.basic.ArcTan2, 'cythrust::atan2_'),
+            #(theano.scalar.basic.ArcTanh, 'cythrust::'),
+            (theano.scalar.basic.Cast, 'thrust::identity'),
+            (theano.scalar.basic.Ceil, 'cythrust::ceil_'),
+            #(theano.scalar.basic.Clip, 'cythrust::'),
+            (theano.scalar.basic.Cos, 'cythrust::cos_'),
+            (theano.scalar.basic.Cosh, 'cythrust::cosh_'),
+            #(theano.scalar.basic.Deg2Rad, 'cythrust::'),
+            #(theano.scalar.basic.Exp, 'cythrust::'),  # $e^{a}$
+            #(theano.scalar.basic.Exp2, 'cythrust::'),  # $2^{a}$
+            #(theano.scalar.basic.Expm1, 'cythrust::'),  # $e^{a} - 1$
+            (theano.scalar.basic.Floor, 'cythrust::floor_'),
+            (theano.scalar.basic.Inv, 'cythrust::inv_'),  # $1 / a$
+            (theano.scalar.basic.Invert, 'cythrust::logical_not'),  # $~a$
+            #(theano.scalar.basic.Log, 'cythrust::'),  # Log base $e$
+            #(theano.scalar.basic.Log10, 'cythrust::'),  # Log base 10
+            #(theano.scalar.basic.Log1p, 'cythrust::'),  # $\ln(1 + a)$
+            #(theano.scalar.basic.Log2, 'cythrust::'),  # Log base 2
+            (theano.scalar.basic.Neg, 'cythrust::negate'),  # Negative
+            #(theano.scalar.basic.Rad2Deg, 'cythrust::'),
+            #(theano.scalar.basic.RoundHalfAwayFromZero, 'cythrust::'),
+            #(theano.scalar.basic.RoundHalfToEven, 'cythrust::'),
+            (theano.scalar.basic.Sgn, 'cythrust::sign'),  # Sign
+            (theano.scalar.basic.Sin, 'cythrust::sin_'),
+            (theano.scalar.basic.Sinh, 'cythrust::sinh_'),
+            (theano.scalar.basic.Sqr, 'cythrust::square'),
+            (theano.scalar.basic.Sqrt, 'cythrust::square_root'),
+            (theano.scalar.basic.Tan, 'cythrust::tan_'),
+            (theano.scalar.basic.Tanh, 'cythrust::tanh_'),
+            (theano.scalar.basic.Trunc, 'cythrust::trunc_'),  # `(a >= 0) ? floor(a) : -floor(-a)`
+        ])
+
+        op_type = None
+        op, (arg, ) = extract_op(node)
+
+        for theano_class, thrust_type in THRUST_OP_BY_THEANO.iteritems():
+            if isinstance(op, theano_class):
+                op_type = ('%s<' % thrust_type +
+                           CTYPE_BY_THEANO_TYPE[node.owner.out.dtype] + '>')
+
+        if op_type is None:
+            raise ValueError('Unhandled operator type: %s' % op)
+
+        self.typedefs[node] = ('thrust::transform_iterator<%s, %s >' %
+                               (op_type, self.typenames[arg]))
+        name = self.names_by_node[node]
+        self.typenames[node] = '%s_t' % name
+        self.values[node] = ('%s(%s, %s())' % (name, self.names_by_node[arg],
+                                               op_type))
+
+    def handle_ternary(self, node):
+        THRUST_OP_BY_THEANO = OrderedDict([
+            (theano.scalar.basic.Switch, 'cythrust::switch_'), # `a ? b : c`
+        ])
+
+        op_type = None
+        op, args = extract_op(node)
+
+        for theano_class, thrust_type in THRUST_OP_BY_THEANO.iteritems():
+            if isinstance(op, theano_class):
+                op_type = ('%s<' % thrust_type +
+                           CTYPE_BY_THEANO_TYPE[node.owner.out.dtype] + '>')
+
+        if op_type is None:
+            raise ValueError('Unhandled operator type: %s' % op)
+
+        self.typedefs[node] = (
+            'thrust::transform_iterator<unpack_ternary_args<' + op_type + ' >,'
+            'thrust::zip_iterator<'
+            'thrust::tuple<' + ', '.join([self.typenames[a] for a in args]) + ' > > >')
+
+        name = self.names_by_node[node]
+        self.typenames[node] = '%s_t' % name
+        self.values[node] = ('%s(thrust::make_zip_iterator(thrust::make_tuple(%s)), unpack_ternary_args<%s >(%s()))'
+                             % (name, ', '.join([self.names_by_node[a]
+                                                 for a in args]), op_type,
+                                op_type))
 
     def handle_binary(self, node):
+        THRUST_OP_BY_THEANO = OrderedDict([
+            (theano.scalar.basic.Add, 'thrust::plus'),
+            (theano.scalar.basic.AND, 'thrust::bit_and'),
+            (theano.scalar.basic.EQ, 'thrust::equal_to'),
+            (theano.scalar.basic.GE, 'thrust::greater_equal'),
+            (theano.scalar.basic.GT, 'thrust::greater'),
+            (theano.scalar.basic.LE, 'thrust::less_equal'),
+            (theano.scalar.basic.LT, 'thrust::less'),
+            (theano.scalar.basic.Minimum, 'thrust::minimum'),
+            (theano.scalar.basic.Maximum, 'thrust::maximum'),
+            (theano.scalar.basic.Mod, 'thrust::modulus'),
+            (theano.scalar.basic.Mul, 'thrust::multiplies'),
+            (theano.scalar.basic.NEQ, 'thrust::not_equal_to'),
+            (theano.scalar.basic.OR, 'thrust::bit_or'),
+            (theano.scalar.basic.Pow, 'cythrust::power'),  # `pow(a, b)`, i.e., $a ^ b$
+            (theano.scalar.basic.Sqrt, 'cythrust::square_root'),
+            (theano.scalar.basic.Sub, 'thrust::minus'),
+            ((theano.scalar.basic.TrueDiv, theano.scalar.basic.IntDiv), 'thrust::divides'),
+            (theano.scalar.basic.XOR, 'thrust::bit_xor'),
+        ])
+
+        op_type = None
         op, args = extract_op(node)
-        if isinstance(op, theano.scalar.basic.Mul):
-            op_type = ('thrust::multiplies<' +
-                       CTYPE_BY_THEANO_TYPE[node.owner.out.dtype] + '>')
-        elif isinstance(op, (theano.scalar.basic.TrueDiv,
-                             theano.scalar.basic.IntDiv)):
-            op_type = ('thrust::divides<' +
-                       CTYPE_BY_THEANO_TYPE[node.owner.out.dtype] + '>')
-        elif isinstance(op, theano.scalar.basic.Add):
-            # 'add'
-            op_type = ('thrust::plus<' +
-                       CTYPE_BY_THEANO_TYPE[node.owner.out.dtype] + '>')
-        elif isinstance(op, theano.scalar.basic.Sub):
-            op_type = ('thrust::minus<' +
-                       CTYPE_BY_THEANO_TYPE[node.owner.out.dtype] + '>')
-        elif isinstance(op, theano.scalar.basic.Pow):
-            # 'pow'
-            op_type = ('cythrust::power<' +
-                       CTYPE_BY_THEANO_TYPE[node.owner.out.dtype] + '>')
-        elif isinstance(op, theano.scalar.basic.Sqr):
-            # 'sqr'
-            op_type = ('cythrust::square<' +
-                       CTYPE_BY_THEANO_TYPE[node.owner.out.dtype] + '>')
-        elif isinstance(op, theano.scalar.basic.Sqrt):
-            op_type = ('cythrust::square_root<' +
-                       CTYPE_BY_THEANO_TYPE[node.owner.out.dtype] + '>')
+
+        for theano_class, thrust_type in THRUST_OP_BY_THEANO.iteritems():
+            if isinstance(op, theano_class):
+                op_type = ('%s<' % thrust_type +
+                           CTYPE_BY_THEANO_TYPE[node.owner.out.dtype] + '>')
+
+        if op_type is None:
+            raise ValueError('Unhandled operator type: %s' % op)
+
         self.typedefs[node] = (
             'thrust::transform_iterator<unpack_binary_args<' + op_type + ' >,'
             'thrust::zip_iterator<'
@@ -192,8 +283,17 @@ class TypeNames(object):
                 self.typenames[node] = ('thrust::constant_iterator<' +
                                         self.typenames[args[0]] + ' >')
                 self.handle_scalar(node)
-            else:
+            elif len(args) == 3:
+                self.handle_ternary(node)
+            elif len(args) == 2:
                 self.handle_binary(node)
+            elif len(args) == 1:
+                self.handle_unary(node)
+            else:
+                raise ValueError('Unhandled operator type: %s' % op)
+        elif isinstance(node, theano.tensor.TensorConstant):
+            self.values[node] = node.value
+            self.typenames[node] = CTYPE_BY_THEANO_TYPE[node.dtype]
         elif isinstance(node, theano.tensor.TensorVariable):
             dtype = node.dtype + '_t'
             if node.type.ndim == 0:
@@ -220,8 +320,13 @@ class ThrustCode(object):
         for n in node_data['output']:
             typenames.update(n)
         output_nodes = set(node_data['output'])
-        graph_inputs = [n for inputs in node_data['inputs']
-                        for n in inputs if n not in output_nodes]
+
+        graph_inputs = []
+        for inputs in node_data['inputs']:
+            for n in inputs:
+                if getattr(n, 'name', None) and (
+                        n not in itertools.chain(output_nodes, graph_inputs)):
+                    graph_inputs.append(n)
 
         self.typenames = typenames
         self.output_nodes = output_nodes
@@ -233,6 +338,10 @@ class ThrustCode(object):
 
         iterator_code = iterator_template.render(name=name,
                                                  typenames=self.typenames,
+                                                 description=
+                                                 'Equivalent code: `%s`' %
+                                                 theano.pp(self.dfg
+                                                           .operation_graph),
                                                  graph_inputs=
                                                  self.graph_inputs)
         return iterator_code
@@ -266,3 +375,5 @@ if __name__ == '__main__':
 
     with path('~/local/include/test.hpp').expand().open('wb') as output:
         output.write(thrust_code.header_code('Foo'))
+
+

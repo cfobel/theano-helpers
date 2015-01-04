@@ -1,5 +1,11 @@
 OPERATOR_TEMPLATE = '''
 struct {% if name %}{{ name }}{% else %}Operator{% endif %} {
+  {%- if description %}
+  /****************************************************************************
+   * {{ description }}
+   ***************************************************************************/
+
+  {% endif -%}
   {% for node, typedef in typenames.typedefs.iteritems() -%}
   typedef {{ typedef }} {{ typenames.names_by_node[node] }}_t;
   {% endfor %}
