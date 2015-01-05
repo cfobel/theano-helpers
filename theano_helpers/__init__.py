@@ -156,7 +156,8 @@ class TypeNames(object):
             (theano.scalar.basic.ArcTan, 'cythrust::atan_'),
             (theano.scalar.basic.ArcTan2, 'cythrust::atan2_'),
             #(theano.scalar.basic.ArcTanh, 'cythrust::'),
-            (theano.scalar.basic.Cast, 'thrust::identity'),
+            ((theano.scalar.basic.Cast, theano.tensor.basic.Flatten),
+             'thrust::identity'),
             (theano.scalar.basic.Ceil, 'cythrust::ceil_'),
             #(theano.scalar.basic.Clip, 'cythrust::'),
             (theano.scalar.basic.Cos, 'cythrust::cos_'),
@@ -250,12 +251,24 @@ class TypeNames(object):
             (theano.scalar.basic.Pow, 'cythrust::power'),  # `pow(a, b)`, i.e., $a ^ b$
             (theano.scalar.basic.Sqrt, 'cythrust::square_root'),
             (theano.scalar.basic.Sub, 'thrust::minus'),
-            ((theano.scalar.basic.TrueDiv, theano.scalar.basic.IntDiv), 'thrust::divides'),
+            ((theano.scalar.basic.TrueDiv, theano.scalar.basic.IntDiv),
+             'thrust::divides'),
             (theano.scalar.basic.XOR, 'thrust::bit_xor'),
         ])
 
         op_type = None
         op, args = extract_op(node)
+
+        if isinstance(op, theano.tensor.subtensor.AdvancedSubtensor1):
+            self.typedefs[node] = ('thrust::permutation_iterator<' +
+                                   ', '.join([self.typenames[a] for a in args])
+                                   + ' >')
+            name = self.names_by_node[node]
+            self.typenames[node] = '%s_t' % name
+            self.values[node] = '%s(%s)' % (name,
+                                            ', '.join([self.names_by_node[a]
+                                                       for a in args]))
+            return
 
         for theano_class, thrust_type in THRUST_OP_BY_THEANO.iteritems():
             if isinstance(op, theano_class):
