@@ -213,6 +213,18 @@ class TypeNames(object):
         op_type = None
         op, args = extract_op(node)
 
+        if isinstance(op, theano.tensor.basic.ARange):
+            start, stop, step = args
+            if step.value != 1:
+                raise ValueError('Only ranges with step == 1 are currently '
+                                 'supported.')
+            self.typedefs[node] = ('thrust::counting_iterator<' +
+                                   self.typenames[start] + ' >')
+            name = self.names_by_node[node]
+            self.typenames[node] = '%s_t' % name
+            self.values[node] = '%s(%s)' % (name, start.value)
+            return
+
         for theano_class, thrust_type in THRUST_OP_BY_THEANO.iteritems():
             if isinstance(op, theano_class):
                 op_type = ('%s<' % thrust_type +
