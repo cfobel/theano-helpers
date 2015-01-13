@@ -215,11 +215,14 @@ class TypeNames(object):
 
         if isinstance(op, theano.tensor.basic.ARange):
             start, stop, step = args
+            # TODO: We should be able to support different step sizes by
+            # wrapping the `counting_iterator` in a `transform_iterator` that
+            # applies a `multiplies` functor to multiply by the step value.
             if step.value != 1:
                 raise ValueError('Only ranges with step == 1 are currently '
                                  'supported.')
             self.typedefs[node] = ('thrust::counting_iterator<' +
-                                   self.typenames[start] + ' >')
+                                   self.typenames[stop] + ' >')
             name = self.names_by_node[node]
             self.typenames[node] = '%s_t' % name
             self.values[node] = '%s(%s)' % (name, start.value)
