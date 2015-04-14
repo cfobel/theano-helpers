@@ -66,11 +66,14 @@ extract_node = lambda t: (t, arguments(t)) if t.owner else t
 def extract(node):
     try:
         #op, args = extract_op(node)
-        op, args = extract_node(node)
-        if args is None:
-            return op
+        node, args = extract_node(node)
+        op, op_args = extract_op(node)
+        if isinstance(op, theano.tensor.basic.Flatten):
+            return extract(args[0])
+        elif args is None:
+            return node
         else:
-            return (op, map(extract, args))
+            return (node, map(extract, args))
     except (ValueError, TypeError):
         # `node` is a leaf node, *not* an operation.
         return node
@@ -81,6 +84,16 @@ class DataFlowGraph(object):
         self.operation_graph = operation_graph
         self.tree = nested_structures.apply_depth_first(
             [extract(operation_graph)], lambda node, *args: node, as_dict=True)
+        for n in self.flatten():
+            try:
+                node, args = extract_node(n)
+                inputs = n.owner.inputs
+                for k, i in enumerate(inputs):
+                    op, op_args = extract_op(i)
+                    if isinstance(op, theano.tensor.basic.Flatten):
+                        n.owner.inputs[k] = i.owner.inputs[0]
+            except (ValueError, TypeError):
+                pass
 
     def collect(self, func=None):
         if func is None:
@@ -347,7 +360,7 @@ class ThrustCode(object):
 
         for n in node_data['output']:
             typenames.update(n)
-        output_nodes = set(node_data['output'])
+        output_nodes = node_data['output'].drop_duplicates()
 
         graph_inputs = []
         for inputs in node_data['inputs']:
